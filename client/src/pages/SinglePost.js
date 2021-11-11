@@ -1,0 +1,206 @@
+import React, { useContext, useState, useRef } from "react";
+import gql from "graphql-tag";
+import { useQuery, useMutation } from "@apollo/react-hooks";
+import moment from "moment";
+import {
+  Button,
+  Card,
+  Form,
+  Grid,
+  Image,
+  Icon,
+  Label,
+} from "semantic-ui-react";
+
+import { AuthContext } from "../context/auth";
+import LikeButton from "../components/LikeButton";
+import DeleteButton from "../components/DeleteButton";
+import MyPopup from "../util/MyPopup";
+
+function SinglePost(props) {
+  const postId = props.match.params.postId;
+  const { user } = useContext(AuthContext);
+  const commentInputRef = useRef(null);
+
+  const [comment, setComment] = useState("");
+
+  const {
+    data: { getPost },
+  } = useQuery(FETCH_POST_QUERY, {
+    //If we will perform a mutation, we the variables
+    variables: {
+      postId,
+    },
+  });
+
+  const [submitComment] = useMutation(SUBMIT_COMMENT_MUTATION, {
+    update() {
+      //Once the comment is submitted, clear the value of the comment
+      setComment("");
+      //Once comment is submitted, blur the input. Meaning remove the focus on the input
+      commentInputRef.current.blur();
+    },
+    variables: {
+      postId,
+      body: comment,
+    },
+  });
+
+  //Just use the props, we no longer need a useHistory hook
+  function deletePostCallback() {
+    props.history.push("/");
+  }
+
+  let postMarkup;
+  if (!getPost) {
+    postMarkup = <p>Loading post..</p>;
+  } else {
+    const {
+      id,
+      body,
+      createdAt,
+      username,
+      comments,
+      likes,
+      likeCount,
+      commentCount,
+    } = getPost;
+
+    postMarkup = (
+      <Grid>
+        <Grid.Row>
+          <Grid.Column width={2}>
+            <Image
+              src="https://react.semantic-ui.com/images/avatar/large/molly.png"
+              size="small"
+              float="right"
+            />
+          </Grid.Column>
+          <Grid.Column width={10}>
+            <Card fluid>
+              <Card.Content>
+                <Card.Header>{username}</Card.Header>
+                <Card.Meta>{moment(createdAt).fromNow()}</Card.Meta>
+                <Card.Description>{body}</Card.Description>
+              </Card.Content>
+              <hr />
+              <Card.Content extra>
+                <LikeButton user={user} post={{ id, likeCount, likes }} />
+                {/* Also there is a pop up when we hover over this button it will show Comment on post */}
+                <MyPopup content="Comment on post">
+                  <Button
+                    as="div"
+                    labelPosition="right"
+                    onClick={() => console.log("Comment on post")}
+                  >
+                    <Button basic color="blue">
+                      <Icon name="comments" />
+                    </Button>
+                    <Label basic color="blue" pointing="left">
+                      {commentCount}
+                    </Label>
+                  </Button>
+                </MyPopup>
+                {
+                  //Check if the user is the owner of this post so we ca show a delete button
+                  user && user.username === username && (
+                    <DeleteButton postId={id} callback={deletePostCallback} />
+                  )
+                }
+              </Card.Content>
+            </Card>
+            {
+              //If the user is logged in then, we will show the comment form
+              user && (
+                <Card fluid>
+                  <Card.Content>
+                    <p>Post a comment</p>
+                    <Form>
+                      <div className="ui action input fluid">
+                        <input
+                          type="text"
+                          placeholder="Comment.."
+                          name="comment"
+                          value={comment}
+                          onChange={(event) => setComment(event.target.value)}
+                          ref={commentInputRef}
+                        />
+                        <button
+                          type="submit"
+                          className="ui button teal"
+                          disabled={comment.trim() === ""}
+                          onClick={submitComment}
+                        >
+                          Submit
+                        </button>
+                      </div>
+                    </Form>
+                  </Card.Content>
+                </Card>
+              )
+            }
+            {
+              //Post the comments already posted
+              comments.map((comment) => (
+                <Card fluid key={comment.id}>
+                  <Card.Content>
+                    {
+                      //Check if the user is the owner of the comment to be able to delete it later. We will pass the commentId here to be used by the DeleteButton component
+                      user && user.username === comment.username && (
+                        <DeleteButton postId={id} commentId={comment.id} />
+                      )
+                    }
+                    <Card.Header>{comment.username}</Card.Header>
+                    <Card.Meta>{moment(comment.createdAt).fromNow()}</Card.Meta>
+                    <Card.Description>{comment.body}</Card.Description>
+                  </Card.Content>
+                </Card>
+              ))
+            }
+          </Grid.Column>
+        </Grid.Row>
+      </Grid>
+    );
+  }
+  //Return the entire thing, which is the postMarkup function that makes up this entire SinglePost component
+  return postMarkup;
+}
+
+const SUBMIT_COMMENT_MUTATION = gql`
+  mutation ($postId: String!, $body: String!) {
+    createComment(postId: $postId, body: $body) {
+      id
+      comments {
+        id
+        body
+        createdAt
+        username
+      }
+      commentCount
+    }
+  }
+`;
+
+const FETCH_POST_QUERY = gql`
+  query ($postId: ID!) {
+    getPost(postId: $postId) {
+      id
+      body
+      createdAt
+      username
+      likeCount
+      likes {
+        username
+      }
+      commentCount
+      comments {
+        id
+        username
+        createdAt
+        body
+      }
+    }
+  }
+`;
+
+export default SinglePost;
